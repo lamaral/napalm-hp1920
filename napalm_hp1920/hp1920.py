@@ -130,7 +130,7 @@ class HP1920Driver(NetworkDriver):
         """
         self.disable_paging()
         out_display_version = self.device.send_command("display version").split("\n")
-        uptime = None
+        uptime = 0
         ver_str = None
         for line in out_display_version:
             if "Software, Version " in line:
