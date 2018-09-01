@@ -25,10 +25,6 @@ from netmiko import ConnectHandler
 
 from napalm.base import NetworkDriver
 from napalm.base.exceptions import (
-    ConnectionException,
-    SessionLockedException,
-    MergeConfigException,
-    ReplaceConfigException,
     CommandErrorException,
 )
 
@@ -156,7 +152,9 @@ class HP1920Driver(NetworkDriver):
                         uptime += int(timer[0]) * MINUTE_SECONDS
 
         out_display_device = self.device.send_command("display device manuinfo")
-        match = re.findall(r"""^Slot\s+(\d+):\nDEVICE_NAME\s+:\s+(.*)\nDEVICE_SERIAL_NUMBER\s+:\s+(.*)\nMAC_ADDRESS\s+:\s+([0-9a-fA-F]{1,4}-[0-9a-fA-F]{1,4}-[0-9a-fA-F]{1,4})\nMANUFACTURING_DATE\s+:\s+(.*)\nVENDOR_NAME\s+:\s+(.*)""", out_display_device, re.M)
+        match = re.findall(
+            r"""^Slot\s+(\d+):\nDEVICE_NAME\s+:\s+(.*)\nDEVICE_SERIAL_NUMBER\s+:\s+(.*)\nMAC_ADDRESS\s+:\s+([0-9a-fA-F]{1,4}-[0-9a-fA-F]{1,4}-[0-9a-fA-F]{1,4})\nMANUFACTURING_DATE\s+:\s+(.*)\nVENDOR_NAME\s+:\s+(.*)""",
+            out_display_device, re.M)
         snumber = set()
         vendor = set()
         hwmodel = set()
@@ -240,7 +238,9 @@ class HP1920Driver(NetworkDriver):
         # a036-9f00-29c6 1        Learned        Bridge-Aggregation31     AGING
         # b8af-675c-0800 1        Learned        Bridge-Aggregation2      AGING
         out_mac_table = self.device.send_command('display mac-address')
-        mactable = re.findall(r'^([0-9a-fA-F]{1,4}-[0-9a-fA-F]{1,4}-[0-9a-fA-F]{1,4})\s+(\d+)\s+(\w+)\s+([A-Za-z0-9-/]{1,40})\s+(.*)', out_mac_table, re.M)
+        mactable = re.findall(
+            r'^([0-9a-fA-F]{1,4}-[0-9a-fA-F]{1,4}-[0-9a-fA-F]{1,4})\s+(\d+)\s+(\w+)\s+([A-Za-z0-9-/]{1,40})\s+(.*)',
+            out_mac_table, re.M)
         output_mactable = []
         record = {}
         for rec in mactable:
@@ -361,7 +361,6 @@ class HP1920Driver(NetworkDriver):
         # TODO: get device with v6 and update above struct
         # ipv6table = re.findall(r'',out_curr_config,re.M)
         output_ipv4table = []
-        iface = {'ipv4': {}, 'ipv6': {}}
         for rec in ipv4table:
             interface, ip, mask = rec
             norm_int = self._normalize_port_name(interface)
@@ -427,6 +426,31 @@ class HP1920Driver(NetworkDriver):
             output_lldptable[local_port] = [{'hostname': neighbor, 'port': remote_port}]
         return output_lldptable
 
+    def get_environment(self):
+        # Disable Paging
+        self.disable_paging()
+
+        output_environment = {}
+
+        # Process CPU usage
+        out_cpu = self.device.send_command('display cpu-usage')
+        cpuusage = re.findall(r'^Slot\s+(\d+)\s+CPU usage:\s+(\d+)%', out_cpu, re.M)
+        output_cpu = {}
+        for rec in cpuusage:
+            id, usage = rec
+            output_cpu[id] = {"%usage": usage}
+
+        # Process memory usage
+        out_memory = self.device.send_command('display memory')
+        memoryusage = re.findall(r'^System Total Memory\(bytes\):\s+(\d+)\s+Total Used Memory\(bytes\):\s+(\d+)',
+                                 out_memory, re.M)
+        total, used = memoryusage[0]
+        output_memory = {"used_ram": str(int(round(int(used) / 1048576))) + 'MB', "available_ram": str(int(round((int(total) - int(used)) / 1048576))) + 'MB'}
+
+        output_environment["cpu"] = output_cpu
+        output_environment["memory"] = output_memory
+        return output_environment
+
     # Util functions
     @staticmethod
     def _format_mac_cisco_way(mac_address):
@@ -435,12 +459,12 @@ class HP1920Driver(NetworkDriver):
         AA:BB:CC:DD:EE:FF
         """
         mac_address = mac_address.replace('-', '')
-        return mac_address[:2] +\
-            ':' + mac_address[2:4] +\
-            ':' + mac_address[4:6] +\
-            ':' + mac_address[6:8] +\
-            ':' + mac_address[8:10] +\
-            ':' + mac_address[10:12]
+        return mac_address[:2] + \
+               ':' + mac_address[2:4] + \
+               ':' + mac_address[4:6] + \
+               ':' + mac_address[6:8] + \
+               ':' + mac_address[8:10] + \
+               ':' + mac_address[10:12]
 
     @staticmethod
     def _normalize_port_name(res_port):
@@ -468,5 +492,5 @@ class HP1920Driver(NetworkDriver):
             # print(" --- Port Name: "+'\x1b[1;32;40m' +"{}" .format(port_name)+'\x1b[0m')
             return port_name
         else:
-            return res_port 
+            return res_port
             # print('\x1b[1;31;40m' + " --- Unknown Port Name: {} --- ".format(res_port)+'\x1b[0m')
